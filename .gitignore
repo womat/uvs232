@@ -13,3 +13,10 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+/.idea/
+/.idea/misc.xml
+/.idea/modules.xml
+/.idea/uvs232.iml
+/.idea/vcs.xml
+/go.sum
