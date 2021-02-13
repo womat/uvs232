@@ -3,6 +3,7 @@ package session
 import (
 	"errors"
 	"fmt"
+	"github.com/womat/debug"
 	"sync"
 	"time"
 
@@ -84,15 +85,19 @@ func (s *Session) Open(connection string) (err error) {
 	}
 
 	// ComPort will be unlocked with the Close() function
+	debug.TraceLog.Print("lock the com port")
 	comPort.Lock()
 
 	func() {
+		debug.TraceLog.Print("open the com port")
 		if s.Port, err = serial.Open(port, mode); err != nil {
 			return
 		}
+		debug.TraceLog.Print("set rts")
 		if err = s.Port.SetRTS(false); err != nil {
 			return
 		}
+		debug.TraceLog.Print("set dtr")
 		if err = s.Port.SetDTR(true); err != nil {
 			return
 		}
@@ -115,11 +120,16 @@ func (s *Session) Close() (err error) {
 	defer comPort.Unlock()
 
 	if s.Port != nil {
+		debug.TraceLog.Print("unset dtr")
 		_ = s.Port.SetDTR(false)
+		debug.TraceLog.Print("unset rts")
 		_ = s.Port.SetRTS(false)
+		debug.TraceLog.Print("close com port")
 		err = s.Port.Close()
 		return
 	}
+
+	debug.TraceLog.Print("unlock the com port")
 	return
 }
 
@@ -137,12 +147,15 @@ func (s *Session) CurrentData() (m Measurement, err error) {
 func (s *Session) ReadData() (m []Measurement, err error) {
 	var log *logger
 
+	debug.TraceLog.Print("start to read data header")
 	if log, err = s.openLogger(); err != nil {
 		return
 	}
+	debug.TraceLog.Print("start to read data block")
 	if m, err = log.readLogger(); err != nil {
 		return
 	}
+	debug.TraceLog.Print("start to read data footer")
 	return m, log.closeLogger()
 }
 

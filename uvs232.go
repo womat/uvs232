@@ -1,6 +1,7 @@
 package uvs232
 
 import (
+	"github.com/womat/debug"
 	"github.com/womat/uvs232/pkg/session"
 )
 
@@ -24,11 +25,13 @@ func Version(com string) (v string, err error) {
 func CurrentData(com string) (m session.Measurement, err error) {
 	s := session.New()
 
+	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
 	defer s.Close()
 
+	debug.TraceLog.Print("start to read current data from")
 	return s.CurrentData()
 }
 
@@ -36,11 +39,13 @@ func CurrentData(com string) (m session.Measurement, err error) {
 func ReadLogger(com string) (m []session.Measurement, err error) {
 	s := session.New()
 
+	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
 	defer s.Close()
 
+	debug.TraceLog.Print("start to read data from eeprom")
 	return s.ReadData()
 }
 
@@ -48,10 +53,12 @@ func ReadLogger(com string) (m []session.Measurement, err error) {
 func ClearLogger(com string) (err error) {
 	s := session.New()
 
+	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
 	defer s.Close()
 
+	debug.TraceLog.Print("start to clear data from eeprom")
 	return s.ClearData()
 }
