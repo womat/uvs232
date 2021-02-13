@@ -31,7 +31,7 @@ func CurrentData(com string) (m session.Measurement, err error) {
 	}
 	defer s.Close()
 
-	debug.TraceLog.Print("start to read current data from")
+	debug.TraceLog.Print("start to read current data")
 	return s.CurrentData()
 }
 

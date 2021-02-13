@@ -117,8 +117,6 @@ func (s *Session) Open(connection string) (err error) {
 
 // Close closes the serial device
 func (s *Session) Close() (err error) {
-	defer comPort.Unlock()
-
 	if s.Port != nil {
 		debug.TraceLog.Print("unset dtr")
 		_ = s.Port.SetDTR(false)
@@ -126,10 +124,11 @@ func (s *Session) Close() (err error) {
 		_ = s.Port.SetRTS(false)
 		debug.TraceLog.Print("close com port")
 		err = s.Port.Close()
-		return
+		debug.TraceLog.Print("unlock the com port")
+		comPort.Unlock()
+		debug.TraceLog.Print("com port is unlocked")
 	}
 
-	debug.TraceLog.Print("unlock the com port")
 	return
 }
 
