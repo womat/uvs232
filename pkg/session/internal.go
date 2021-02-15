@@ -19,13 +19,15 @@ const (
 )
 
 // request received uvs232 logger Data from the serial interface
-func (s *Session) request(request []byte, response []byte) (n int, err error) {
+func (s *Session) request(request []byte, response []byte) (int, error) {
+	var err error
+	var n int
 	// clear input/output buffer
 	if err = s.Port.ResetInputBuffer(); err != nil {
-		return
+		return n, err
 	}
 	if err = s.Port.ResetOutputBuffer(); err != nil {
-		return
+		return n, err
 	}
 
 	time.Sleep(sendDelay)
@@ -33,18 +35,20 @@ func (s *Session) request(request []byte, response []byte) (n int, err error) {
 	debug.TraceLog.Printf("request: [% x]\n", request)
 	if _, err = s.Port.Write(request); err != nil {
 		debug.TraceLog.Printf("error to write serial interface: %v\n", err)
-		return
+		return n, err
 	}
 
-	//	buffer = make([]byte, maxBufferSize)
 	done := make(chan bool, 1)
 
 	go func() {
-		if n, err = s.Port.Read(response); n == 0 {
+		buffer := make([]byte, maxBufferSize)
+
+		if n, err = s.Port.Read(buffer); n == 0 {
 			debug.TraceLog.Printf("error to read serial interface: %v\n", err)
 			err = io.EOF
 		}
-		debug.TraceLog.Printf("response (%v bytes): [% x]\n", n, response[:n])
+		debug.TraceLog.Printf("response (%v bytes): [% x]\n", n, buffer[:n])
+		copy(response, buffer)
 		close(done)
 	}()
 
@@ -53,11 +57,11 @@ func (s *Session) request(request []byte, response []byte) (n int, err error) {
 	case <-time.After(timeOut):
 		err = errors.New(errTimeOut)
 		debug.TraceLog.Printf("error to read serial interface: %v\n", err)
-		return
+		return n, err
 	}
 
 	debug.TraceLog.Printf("request runtime: %vms\n", time.Since(start).Milliseconds())
-	return
+	return n, err
 }
 
 // checkMod256 check Mod256 checksum of the last data byte
