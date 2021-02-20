@@ -3,11 +3,11 @@ package session
 import (
 	"errors"
 	"fmt"
-	"github.com/womat/debug"
 	"sync"
 	"time"
 
-	"go.bug.st/serial.v1"
+	"github.com/womat/debug"
+	"go.bug.st/serial"
 )
 
 const (
@@ -101,10 +101,6 @@ func (s *Session) Open(connection string) (err error) {
 		if err = s.Port.SetDTR(true); err != nil {
 			return
 		}
-		// I don't know, why SetRTS is called 2 times
-		//	if err = s.Port.SetRTS(false); err != nil {
-		//		return
-		//	}
 	}()
 
 	if err != nil {
@@ -122,6 +118,12 @@ func (s *Session) Close() (err error) {
 		_ = s.Port.SetDTR(false)
 		debug.TraceLog.Print("unset rts")
 		_ = s.Port.SetRTS(false)
+
+		debug.TraceLog.Print("reset input buffer")
+		_ = s.Port.ResetInputBuffer()
+		debug.TraceLog.Print("reset output buffer")
+		_ = s.Port.ResetOutputBuffer()
+
 		debug.TraceLog.Print("close com port")
 		err = s.Port.Close()
 		debug.TraceLog.Print("unlock the com port")
