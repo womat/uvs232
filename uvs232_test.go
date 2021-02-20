@@ -14,6 +14,7 @@ func TestVersion(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("error: %q", err)
+		return
 	}
 	if !tools.In(v, version) {
 		t.Errorf("version is %q, but should be %q", v, version)
@@ -25,10 +26,12 @@ func TestCurrentData(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("error: %q", err)
+		return
 	}
 
 	if time.Since(d.Time) > time.Second {
 		t.Errorf("Timestamp is too old: %vs", time.Since(d.Time).Seconds())
+		return
 	}
 }
 
@@ -37,8 +40,10 @@ func TestReadLogger(t *testing.T) {
 
 	if err != nil {
 		t.Errorf("error: %q", err)
+		return
 	}
 	if len(m) == 0 {
 		t.Errorf("no data received")
+		return
 	}
 }
