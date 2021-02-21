@@ -1,7 +1,9 @@
 package uvs232
 
 import (
+	"github.com/womat/debug"
 	"github.com/womat/tools"
+	"os"
 	"testing"
 	"time"
 )
@@ -10,6 +12,8 @@ const com = "com4 9600 n 8 1"
 const version = "UVS232 (1DL)"
 
 func TestVersion(t *testing.T) {
+	debug.SetDebug(os.Stderr, debug.Full)
+
 	v, err := Version(com)
 
 	if err != nil {
@@ -22,6 +26,8 @@ func TestVersion(t *testing.T) {
 }
 
 func TestCurrentData(t *testing.T) {
+	debug.SetDebug(os.Stderr, debug.Full)
+
 	d, err := CurrentData(com)
 
 	if err != nil {
@@ -36,6 +42,8 @@ func TestCurrentData(t *testing.T) {
 }
 
 func TestReadLogger(t *testing.T) {
+	debug.SetDebug(os.Stderr, debug.Full)
+
 	m, err := ReadLogger(com)
 
 	if err != nil {
