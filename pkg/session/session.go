@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	serial "github.com/albenik/go-serial"
 	"github.com/womat/debug"
-	"go.bug.st/serial"
 )
 
 const (
@@ -101,6 +101,7 @@ func (s *Session) Open(connection string) (err error) {
 		if err = s.Port.SetDTR(true); err != nil {
 			return
 		}
+		s.Port.SetReadTimeout(1000)
 	}()
 
 	if err != nil {

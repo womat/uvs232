@@ -34,7 +34,7 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 	start := time.Now()
 	debug.TraceLog.Printf("request: [% x]\n", request)
 	if _, err = s.Port.Write(request); err != nil {
-		debug.TraceLog.Printf("error to write serial interface: %v\n", err)
+		debug.TraceLog.Printf("error to write serial interface: %v", err)
 		return n, err
 	}
 
@@ -43,11 +43,27 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 	go func() {
 		buffer := make([]byte, maxBufferSize)
 
+		var c uint32
+
+		for {
+			time.Sleep(10 * time.Millisecond)
+			i, err := s.ReadyToRead()
+			debug.TraceLog.Printf("c, i %v %c", c, i)
+
+			if err != nil {
+				return
+			}
+
+			if i == c {
+				break
+			}
+		}
+
 		if n, err = s.Port.Read(buffer); n == 0 {
-			debug.TraceLog.Printf("error to read serial interface: %v\n", err)
+			debug.TraceLog.Printf("error to read serial interface: %v", err)
 			err = io.EOF
 		}
-		debug.TraceLog.Printf("response (%v bytes): [% x]\n", n, buffer[:n])
+		debug.TraceLog.Printf("response (%v bytes): [% x]", n, buffer[:n])
 		copy(response, buffer)
 		close(done)
 	}()
