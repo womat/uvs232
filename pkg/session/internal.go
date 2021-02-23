@@ -39,33 +39,38 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 	}
 
 	done := make(chan bool, 1)
+	cancel := make(chan bool, 1)
 
 	go func() {
-		buffer := make([]byte, maxBufferSize)
-
-		var c uint32
+		defer close(done)
 
 		for {
-			time.Sleep(10 * time.Millisecond)
-			i, err := s.ReadyToRead()
-			debug.TraceLog.Printf("c, i %v %c", c, i)
+			var n uint32
 
-			if err != nil {
+			select {
+			case <-cancel:
+				debug.TraceLog.Printf("cancel request received")
+				return
+			case <-time.After(time.Millisecond):
+			}
+
+			if n, err = s.ReadyToRead(); err != nil {
 				return
 			}
 
-			if i == c {
+			if n > 0 {
+				debug.TraceLog.Printf("ready for %v bytes", n)
 				break
 			}
 		}
 
+		buffer := make([]byte, maxBufferSize)
 		if n, err = s.Port.Read(buffer); n == 0 {
 			debug.TraceLog.Printf("error to read serial interface: %v", err)
 			err = io.EOF
 		}
 		debug.TraceLog.Printf("response (%v bytes): [% x]", n, buffer[:n])
 		copy(response, buffer)
-		close(done)
 	}()
 
 	select {
@@ -76,6 +81,7 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 		return n, err
 	}
 
+	close(cancel)
 	debug.TraceLog.Printf("request runtime: %vms\n", time.Since(start).Milliseconds())
 	return n, err
 }
