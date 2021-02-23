@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	serial "github.com/albenik/go-serial"
+	"github.com/albenik/go-serial"
 	"github.com/womat/debug"
 )
 
