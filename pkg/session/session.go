@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/albenik/go-serial"
+	"github.com/albenik/go-serial/v2"
+
 	"github.com/womat/debug"
 )
 
@@ -25,7 +26,7 @@ const (
 
 // Session is the interface for a serial Port
 type Session struct {
-	serial.Port
+	*serial.Port
 }
 
 // Measurement is the measured data
@@ -77,20 +78,17 @@ func (s *Session) Open(connection string) (err error) {
 		return errors.New("uvs232.Open: " + InvalidParameter)
 	}
 
-	mode := &serial.Mode{
-		BaudRate: b,
-		Parity:   parity[p],
-		DataBits: d,
-		StopBits: stop[st],
-	}
-
 	// ComPort will be unlocked with the Close() function
 	debug.TraceLog.Print("lock the com port")
 	comPort.Lock()
 
 	func() {
 		debug.TraceLog.Print("open the com port")
-		if s.Port, err = serial.Open(port, mode); err != nil {
+		if s.Port, err = serial.Open(port,
+			serial.WithBaudrate(9600),
+			serial.WithDataBits(8),
+			serial.WithParity(parity[p]),
+			serial.WithStopBits(stop[st])); err != nil {
 			return
 		}
 		debug.TraceLog.Print("set rts")
