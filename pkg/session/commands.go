@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"github.com/womat/debug"
 	"time"
 )
 
@@ -113,6 +114,8 @@ func (s *Session) currentData() (m Measurement, err error) {
 	}
 
 	m.Time = time.Now()
+	debug.DebugLog.Printf("measurement %v [% x]", m, response[1:10])
+
 	return
 }
 
