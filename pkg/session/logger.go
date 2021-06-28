@@ -46,16 +46,17 @@ func (s *Session) openLogger() (log *logger, err error) {
 		return nil, errors.New("uvs232.openLog: " + InvalidVersion)
 	}
 
-	return &logger{
-		Session: s,
-		//		id:           response[0],
-		//		version:      response[1],
+	log = &logger{
+		Session:      s,
 		timeStamp:    convertTimeStamp(response[2:5]),
 		Time:         time.Now().Truncate(time.Second),
 		recordLength: uint16(response[5]) - 64,
 		startAddress: binary.LittleEndian.Uint16(response[6:8]),
 		endAddress:   binary.LittleEndian.Uint16(response[8:10]),
-	}, nil
+	}
+
+	debug.DebugLog.Printf("Time: %v, TimeStamp: %v, RecordLength: %v, StartAddress: %x, EndAddress: %x [% x]", log.Time, log.timeStamp, log.recordLength, log.startAddress, log.endAddress, response[:n])
+	return log, nil
 }
 
 // readLogger reads a usv232 data block
@@ -74,12 +75,9 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 
 	for address := log.startAddress; address <= log.endAddress; address += 16 * nrOfFramesMax {
 		if address+16*nrOfFramesMax > log.endAddress {
-			nrOfFrames = int((log.endAddress - address) / 16)
-
-			if nrOfFrames == 0 {
-				nrOfFrames = 1
-			}
+			nrOfFrames = int((log.endAddress-address)/16 + 1)
 		}
+
 		send := []byte{cmdReadData, 0, 0, byte(nrOfFrames), 0}
 		binary.LittleEndian.PutUint16(send[1:3], address)
 		send[4] = checkSumMod256(send[:4])
@@ -115,9 +113,10 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 			if lastTimeStamp > timeStamp {
 				debug.ErrorLog.Printf("timestamp %v is older than last %v  %v [% x]", timeStamp, lastTimeStamp, data, response[idx:idx+12])
 			} else {
-				debug.TraceLog.Printf("timestamp %v %v [% x]", timeStamp, data, response[idx:idx+12])
+				debug.DebugLog.Printf("timestamp %v %v [% x]", timeStamp, data, response[idx:idx+12])
 				lastTimeStamp = timeStamp
 			}
+
 			measurements = append(measurements, data)
 		}
 	}

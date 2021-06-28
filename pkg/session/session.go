@@ -152,10 +152,12 @@ func (s *Session) ReadData() (m []Measurement, err error) {
 	if log, err = s.openLogger(); err != nil {
 		return
 	}
+
 	debug.TraceLog.Print("start to read data block")
 	if m, err = log.readLogger(); err != nil {
 		return
 	}
+
 	debug.TraceLog.Print("start to read data footer")
 	return m, log.closeLogger()
 }
