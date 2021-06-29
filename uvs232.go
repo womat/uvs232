@@ -10,8 +10,11 @@ import (
 
 // Version returns the SW Version of UVS232
 func Version(com string) (v string, err error) {
+	debug.TraceLog.Print("start Version()")
+
 	s := session.New()
 
+	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
@@ -23,6 +26,7 @@ func Version(com string) (v string, err error) {
 // CurrentData reads the current measurements
 // e.g. CurrentData("/dev/ttyr00 9600 n 8 1")
 func CurrentData(com string) (m session.Measurement, err error) {
+	debug.TraceLog.Print("start CurrentData()")
 	s := session.New()
 
 	debug.TraceLog.Printf("open com %v", com)
@@ -31,12 +35,12 @@ func CurrentData(com string) (m session.Measurement, err error) {
 	}
 	defer s.Close()
 
-	debug.TraceLog.Print("start to read current data")
 	return s.CurrentData()
 }
 
 // ReadLogger reads measurements of uvs232 data logger
 func ReadLogger(com string) (m []session.Measurement, err error) {
+	debug.TraceLog.Print("start ReadLogger()")
 	s := session.New()
 
 	debug.TraceLog.Printf("open com %v", com)
@@ -45,7 +49,6 @@ func ReadLogger(com string) (m []session.Measurement, err error) {
 	}
 	defer s.Close()
 
-	debug.TraceLog.Print("start to read data from eeprom")
 	return s.ReadData()
 }
 

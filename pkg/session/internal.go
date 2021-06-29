@@ -32,9 +32,8 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 
 	time.Sleep(sendDelay)
 	start := time.Now()
-	debug.TraceLog.Printf("request: [% x]\n", request)
+	debug.TraceLog.Printf("send request: [% x]\n", request)
 	if _, err = s.Port.Write(request); err != nil {
-		debug.TraceLog.Printf("error to write serial interface: %v", err)
 		return n, err
 	}
 
@@ -59,7 +58,6 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 			}
 
 			if n > 0 {
-				debug.TraceLog.Printf("ready for %v bytes", n)
 				break
 			}
 		}
@@ -69,7 +67,7 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 			debug.TraceLog.Printf("error to read serial interface: %v", err)
 			err = io.EOF
 		}
-		debug.TraceLog.Printf("response (%v bytes): [% x]", n, buffer[:n])
+		debug.TraceLog.Printf("receive response (%v bytes): [% x]", n, buffer[:n])
 		copy(response, buffer)
 	}()
 
@@ -77,7 +75,6 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 	case <-done:
 	case <-time.After(timeOut):
 		err = errors.New(errTimeOut)
-		debug.TraceLog.Printf("error to read serial interface: %v\n", err)
 		return n, err
 	}
 

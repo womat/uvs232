@@ -71,8 +71,6 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 	const nrOfFramesMax = 8
 	nrOfFrames := nrOfFramesMax
 
-	var lastTimeStamp uint32
-
 	for address := log.startAddress; address <= log.endAddress; address += 16 * nrOfFramesMax {
 		if address+16*nrOfFramesMax > log.endAddress {
 			nrOfFrames = int((log.endAddress-address)/16 + 1)
@@ -105,16 +103,14 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 		for i := 0; i < nrOfFrames; i++ {
 			idx := i * 12
 			data := getMeasurement(response[idx : idx+9])
-			//			data.TimeStamp = convertTimeStamp(response[idx+9 : idx+12])
-			//			data.Time = header.Time.Add(time.Duration(header.timeStamp-data.TimeStamp) * -10 * time.Second)
 			timeStamp := convertTimeStamp(response[idx+9 : idx+12])
 			data.Time = log.Time.Add(time.Duration(log.timeStamp-timeStamp) * -10 * time.Second)
 
-			if lastTimeStamp > timeStamp {
+			if i > 0 && data.Time.Before(measurements[i-1].Time) {
+				lastTimeStamp := measurements[i].Time.Sub(log.Time).Seconds()/10 + float64(log.timeStamp)
 				debug.ErrorLog.Printf("timestamp %v is older than last %v  %v [% x]", timeStamp, lastTimeStamp, data, response[idx:idx+12])
 			} else {
 				debug.DebugLog.Printf("timestamp %v %v [% x]", timeStamp, data, response[idx:idx+12])
-				lastTimeStamp = timeStamp
 			}
 
 			measurements = append(measurements, data)

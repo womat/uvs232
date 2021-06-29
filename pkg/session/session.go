@@ -87,17 +87,15 @@ func (s *Session) Open(connection string) (err error) {
 	// ComPort will be unlocked with the Close() function
 	debug.TraceLog.Print("lock the com port")
 	comPort.Lock()
+	debug.TraceLog.Print("com port is locked")
 
 	func() {
-		debug.TraceLog.Print("open the com port")
 		if s.Port, err = serial.Open(port, mode); err != nil {
 			return
 		}
-		debug.TraceLog.Print("set rts")
 		if err = s.Port.SetRTS(false); err != nil {
 			return
 		}
-		debug.TraceLog.Print("set dtr")
 		if err = s.Port.SetDTR(true); err != nil {
 			return
 		}
@@ -114,19 +112,13 @@ func (s *Session) Open(connection string) (err error) {
 // Close closes the serial device
 func (s *Session) Close() (err error) {
 	if s.Port != nil {
-		debug.TraceLog.Print("unset dtr")
 		_ = s.Port.SetDTR(false)
-		debug.TraceLog.Print("unset rts")
 		_ = s.Port.SetRTS(false)
 
-		debug.TraceLog.Print("reset input buffer")
 		_ = s.Port.ResetInputBuffer()
-		debug.TraceLog.Print("reset output buffer")
 		_ = s.Port.ResetOutputBuffer()
 
-		debug.TraceLog.Print("close com port")
 		err = s.Port.Close()
-		debug.TraceLog.Print("unlock the com port")
 		comPort.Unlock()
 		debug.TraceLog.Print("com port is unlocked")
 	}
