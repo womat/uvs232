@@ -19,7 +19,6 @@ const (
 )
 
 // request received uvs232 logger Data from the serial interface
-// TODO auf Read bzw Write umbenennen
 func (s *Session) request(request []byte, response []byte) (int, error) {
 	var err error
 	var n int
@@ -31,7 +30,6 @@ func (s *Session) request(request []byte, response []byte) (int, error) {
 		return n, err
 	}
 
-	// TODO: sendDelay kann global sein (ev channel)
 	time.Sleep(sendDelay)
 	start := time.Now()
 	debug.TraceLog.Printf("send request: [% x]\n", request)
