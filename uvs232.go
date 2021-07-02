@@ -11,10 +11,8 @@ import (
 // Version returns the SW Version of UVS232
 func Version(com string) (v string, err error) {
 	debug.TraceLog.Print("start Version()")
-
 	s := session.New()
 
-	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
@@ -29,7 +27,6 @@ func CurrentData(com string) (m session.Measurement, err error) {
 	debug.TraceLog.Print("start CurrentData()")
 	s := session.New()
 
-	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
@@ -38,12 +35,11 @@ func CurrentData(com string) (m session.Measurement, err error) {
 	return s.CurrentData()
 }
 
-// ReadLogger reads measurements of uvs232 data logger
-func ReadLogger(com string) (m []session.Measurement, err error) {
+// ReadData reads measurements of uvs232 data logger
+func ReadData(com string) (m []session.Measurement, err error) {
 	debug.TraceLog.Print("start ReadLogger()")
 	s := session.New()
 
-	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
@@ -52,16 +48,15 @@ func ReadLogger(com string) (m []session.Measurement, err error) {
 	return s.ReadData()
 }
 
-// ClearLogger deletes logged measurements from uvs232 data logger
-func ClearLogger(com string) (err error) {
+// ClearData deletes logged measurements from uvs232 data logger
+func ClearData(com string) (err error) {
+	debug.TraceLog.Print("start ClearData)=")
 	s := session.New()
 
-	debug.TraceLog.Printf("open com %v", com)
 	if err = s.Open(com); err != nil {
 		return
 	}
 	defer s.Close()
 
-	debug.TraceLog.Print("start to clear data from eeprom")
 	return s.ClearData()
 }

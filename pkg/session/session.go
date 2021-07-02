@@ -50,6 +50,8 @@ func New() (s *Session) {
 
 // Open generates a serial device handler and set DTR ON and RTS off
 func (s *Session) Open(connection string) (err error) {
+	debug.TraceLog.Printf("open %v", connection)
+
 	var port, p, st string
 	var b, d int
 
@@ -104,6 +106,7 @@ func (s *Session) Open(connection string) (err error) {
 	if err != nil {
 		// in the event of an error, the comPort must never remain blocked!
 		comPort.Unlock()
+		debug.TraceLog.Print("com port is unlocked")
 	}
 
 	return
@@ -112,6 +115,7 @@ func (s *Session) Open(connection string) (err error) {
 // Close closes the serial device
 func (s *Session) Close() (err error) {
 	if s.Port != nil {
+		debug.TraceLog.Printf("close %v", s.Port.String())
 		_ = s.Port.SetDTR(false)
 		_ = s.Port.SetRTS(false)
 

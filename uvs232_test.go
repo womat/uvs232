@@ -44,7 +44,7 @@ func TestCurrentData(t *testing.T) {
 func TestReadLogger(t *testing.T) {
 	debug.SetDebug(os.Stderr, debug.Full)
 
-	m, err := ReadLogger(com)
+	m, err := ReadData(com)
 
 	if err != nil {
 		t.Errorf("error: %q", err)

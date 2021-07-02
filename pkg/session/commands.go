@@ -50,6 +50,7 @@ func (s *Session) version() (version string, err error) {
 	response := make([]byte, maxBufferSize)
 	send := []byte{cmdVersion}
 
+	// function req() gehört ins Verzeichnis commands >> umbenennen auf request
 	if n, err = s.req(send, response, "the version request has failed"); err != nil {
 		return
 	}
@@ -114,7 +115,7 @@ func (s *Session) currentData() (m Measurement, err error) {
 	}
 
 	m.Time = time.Now()
-	debug.DebugLog.Printf("measurement %v [% x]", m, response[1:10])
+	debug.TraceLog.Printf("measurement %v [% x]", m, response[1:10])
 
 	return
 }

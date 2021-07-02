@@ -55,12 +55,14 @@ func (s *Session) openLogger() (log *logger, err error) {
 		endAddress:   binary.LittleEndian.Uint16(response[8:10]),
 	}
 
-	debug.DebugLog.Printf("Time: %v, TimeStamp: %v, RecordLength: %v, StartAddress: %x, EndAddress: %x [% x]", log.Time, log.timeStamp, log.recordLength, log.startAddress, log.endAddress, response[:n])
+	debug.TraceLog.Printf("Time: %v, TimeStamp: %v, RecordLength: %v, StartAddress: %x, EndAddress: %x [% x]", log.Time, log.timeStamp, log.recordLength, log.startAddress, log.endAddress, response[:n])
 	return log, nil
 }
 
 // readLogger reads a usv232 data block
 func (log *logger) readLogger() (measurements []Measurement, err error) {
+	var lastTimestamp time.Time
+
 	// no data available
 	if log.startAddress < 0x10 || log.endAddress <= 0x10 {
 		return make([]Measurement, 0), nil
@@ -103,14 +105,15 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 		for i := 0; i < nrOfFrames; i++ {
 			idx := i * 12
 			data := getMeasurement(response[idx : idx+9])
-			timeStamp := convertTimeStamp(response[idx+9 : idx+12])
-			data.Time = log.Time.Add(time.Duration(log.timeStamp-timeStamp) * -10 * time.Second)
+			timestamp := convertTimeStamp(response[idx+9 : idx+12])
+			data.Time = log.Time.Add(time.Duration(log.timeStamp-timestamp) * -10 * time.Second)
 
-			if i > 0 && data.Time.Before(measurements[i-1].Time) {
-				lastTimeStamp := measurements[i].Time.Sub(log.Time).Seconds()/10 + float64(log.timeStamp)
-				debug.ErrorLog.Printf("timestamp %v is older than last %v  %v [% x]", timeStamp, lastTimeStamp, data, response[idx:idx+12])
+			if data.Time.Before(lastTimestamp) {
+				lt := lastTimestamp.Sub(log.Time).Seconds()/10 + float64(log.timeStamp)
+				debug.ErrorLog.Printf("timestamp %v is older than last %v  %v [% x]", timestamp, lt, data, response[idx:idx+12])
 			} else {
-				debug.DebugLog.Printf("timestamp %v %v [% x]", timeStamp, data, response[idx:idx+12])
+				debug.TraceLog.Printf("timestamp %v %v [% x]", timestamp, data, response[idx:idx+12])
+				lastTimestamp = data.Time
 			}
 
 			measurements = append(measurements, data)
