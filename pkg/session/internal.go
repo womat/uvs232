@@ -3,84 +3,81 @@ package session
 import (
 	"encoding/binary"
 	"errors"
-	"io"
+	"fmt"
+	"log/slog"
 	"time"
-
-	"github.com/womat/debug"
 )
 
 const (
 	// delay between two requests
 	sendDelay = 20 * time.Millisecond
-	// timeout to receive a response
+	// timeout to receive a complete response
 	timeOut = 1 * time.Second
-	// Error Message for time out
-	errTimeOut = "time out"
+	// readPoll bounds a single Read, so the deadline is checked regularly
+	readPoll = 20 * time.Millisecond
 )
 
-// request received uvs232 logger Data from the serial interface
-func (s *Session) request(request []byte, response []byte) (int, error) {
-	var err error
-	var n int
-	// clear input/output buffer
-	if err = s.Port.ResetInputBuffer(); err != nil {
-		return n, err
+var (
+	errNotOpen    = errors.New("session is not open")
+	errTimeOut    = errors.New("time out")
+	errIncomplete = errors.New("incomplete response")
+)
+
+// atLeast reports a response as complete once it has n bytes.
+func atLeast(n int) func([]byte) bool {
+	return func(b []byte) bool { return len(b) >= n }
+}
+
+// request sends a command and reads until complete reports the response as
+// whole or the timeout expires.
+//
+// A response can arrive in several pieces - at 9600 baud a data block of 97
+// bytes takes about 100 ms, and a USB adapter delivers it in chunks - so one
+// Read is not enough. Reading happens synchronously: nothing is left reading
+// the port after request returns, so a late answer cannot be taken for the
+// answer to the next command.
+func (s *Session) request(send []byte, complete func([]byte) bool) ([]byte, error) {
+	if s.port == nil {
+		return nil, errNotOpen
 	}
-	if err = s.Port.ResetOutputBuffer(); err != nil {
-		return n, err
+	if err := s.port.ResetInputBuffer(); err != nil {
+		return nil, err
+	}
+	if err := s.port.ResetOutputBuffer(); err != nil {
+		return nil, err
 	}
 
 	time.Sleep(sendDelay)
 	start := time.Now()
-	debug.TraceLog.Printf("send request: [% x]\n", request)
-	if _, err = s.Port.Write(request); err != nil {
-		return n, err
+	slog.Debug("uvs232: send request", "data", hexBytes(send))
+	if _, err := s.port.Write(send); err != nil {
+		return nil, err
 	}
 
-	done := make(chan bool, 1)
-	cancel := make(chan bool, 1)
-
-	go func() {
-		defer close(done)
-
-		for {
-			var n uint32
-
-			select {
-			case <-cancel:
-				debug.TraceLog.Printf("cancel request received")
-				return
-			case <-time.After(time.Millisecond):
-			}
-
-			if n, err = s.ReadyToRead(); err != nil {
-				return
-			}
-
-			if n > 0 {
-				break
-			}
+	deadline := start.Add(timeOut)
+	response := make([]byte, 0, maxBufferSize)
+	chunk := make([]byte, maxBufferSize)
+	for {
+		n, err := s.port.Read(chunk)
+		if err != nil {
+			return response, err
 		}
+		response = append(response, chunk[:n]...)
 
-		buffer := make([]byte, maxBufferSize)
-		if n, err = s.Port.Read(buffer); n == 0 {
-			debug.TraceLog.Printf("error to read serial interface: %v", err)
-			err = io.EOF
+		if len(response) > 0 && complete(response) {
+			slog.Debug("uvs232: receive response", "bytes", len(response), "data", hexBytes(response), "runtime", time.Since(start))
+			return response, nil
 		}
-		debug.TraceLog.Printf("receive response (%v bytes): [% x]", n, buffer[:n])
-		copy(response, buffer)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(timeOut):
-		err = errors.New(errTimeOut)
-		return n, err
+		if len(response) >= maxBufferSize || time.Now().After(deadline) {
+			break
+		}
 	}
 
-	close(cancel)
-	debug.TraceLog.Printf("request runtime: %vms\n", time.Since(start).Milliseconds())
-	return n, err
+	if len(response) == 0 {
+		return nil, errTimeOut
+	}
+	slog.Debug("uvs232: incomplete response", "bytes", len(response), "data", hexBytes(response))
+	return response, errIncomplete
 }
 
 // checkMod256 check Mod256 checksum of the last data byte
@@ -119,15 +116,36 @@ func getMeasurement(buffer []byte) (m Measurement) {
 	return
 }
 
-// req send and receives a response with error handling
-func (s *Session) req(send, response []byte, errorMsg string) (n int, err error) {
-	if n, err = s.request(send, response); err != nil {
-		debug.WarningLog.Printf("%v, the request will be executed again in %vms second", errorMsg, retryTime.Milliseconds())
-		time.Sleep(retryTime)
-
-		if n, err = s.request(send, response); err != nil {
-			debug.ErrorLog.Print(errorMsg)
-		}
+// req sends a request and repeats it once after retryTime if it fails.
+func (s *Session) req(send []byte, complete func([]byte) bool, errorMsg string) ([]byte, error) {
+	response, err := s.request(send, complete)
+	if err == nil {
+		return response, nil
 	}
-	return
+	if errors.Is(err, errNotOpen) {
+		return nil, err
+	}
+
+	slog.Warn("uvs232: "+errorMsg+", retrying", "error", err, "retry", retryTime)
+	time.Sleep(retryTime)
+
+	if response, err = s.request(send, complete); err != nil {
+		return response, fmt.Errorf("%s: %w", errorMsg, err)
+	}
+	return response, nil
+}
+
+// hexBytes formats bytes for the log only when the line is written.
+type hexBytes []byte
+
+func (h hexBytes) LogValue() slog.Value {
+	const digits = "0123456789abcdef"
+	b := make([]byte, 0, 3*len(h))
+	for i, c := range h {
+		if i > 0 {
+			b = append(b, ' ')
+		}
+		b = append(b, digits[c>>4], digits[c&0x0f])
+	}
+	return slog.StringValue(string(b))
 }

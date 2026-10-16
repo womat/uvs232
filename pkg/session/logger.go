@@ -3,8 +3,7 @@ package session
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/womat/debug"
-	"io"
+	"log/slog"
 	"time"
 )
 
@@ -19,19 +18,15 @@ type logger struct {
 
 // openLogger reads the header of uvs232 data block
 func (s *Session) openLogger() (log *logger, err error) {
-	var n int
+	var response []byte
 
-	response := make([]byte, maxBufferSize)
-	send := []byte{cmdHeader}
-
-	if n, err = s.req(send, response, "the request to read a data header has failed"); err != nil {
+	if response, err = s.req([]byte{cmdHeader}, atLeast(11), "the request to read a data header has failed"); err != nil {
 		return
 	}
+	n := len(response)
 
 	// check Frame
 	switch {
-	case n == 0:
-		return nil, io.EOF
 	case n != 11:
 		return nil, errors.New("uvs232.openLog: " + InvalidDataLength)
 	case !checkMod256(response[:n]):
@@ -55,7 +50,8 @@ func (s *Session) openLogger() (log *logger, err error) {
 		endAddress:   binary.LittleEndian.Uint16(response[8:10]),
 	}
 
-	debug.TraceLog.Printf("Time: %v, TimeStamp: %v, RecordLength: %v, StartAddress: %x, EndAddress: %x [% x]", log.Time, log.timeStamp, log.recordLength, log.startAddress, log.endAddress, response[:n])
+	slog.Debug("uvs232: logger header", "time", log.Time, "timestamp", log.timeStamp, "recordLength", log.recordLength,
+		"startAddress", log.startAddress, "endAddress", log.endAddress)
 	return log, nil
 }
 
@@ -71,48 +67,47 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 	measurements = make([]Measurement, 0, 2000)
 
 	const nrOfFramesMax = 8
-	nrOfFrames := nrOfFramesMax
+	start, end := int(log.startAddress), int(log.endAddress)
 
-	for address := log.startAddress; address <= log.endAddress; address += 16 * nrOfFramesMax {
-		if address+16*nrOfFramesMax > log.endAddress {
-			nrOfFrames = int((log.endAddress-address)/16 + 1)
+	// int, not uint16: with an end address near 0xFFFF, address += 128 would
+	// wrap around and the loop would never end.
+	for address := start; address <= end; address += 16 * nrOfFramesMax {
+		nrOfFrames := nrOfFramesMax
+		if address+16*nrOfFramesMax > end {
+			nrOfFrames = (end-address)/16 + 1
 		}
 
 		send := []byte{cmdReadData, 0, 0, byte(nrOfFrames), 0}
-		binary.LittleEndian.PutUint16(send[1:3], address)
+		binary.LittleEndian.PutUint16(send[1:3], uint16(address))
 		send[4] = checkSumMod256(send[:4])
 
-		var n int
-		response := make([]byte, maxBufferSize)
-
-		if n, err = log.req(send, response, "the request to read a data record has failed"); err != nil {
+		var response []byte
+		if response, err = log.req(send, atLeast(nrOfFrames*12+1), "the request to read a data record has failed"); err != nil {
 			return measurements, err
 		}
+		n := len(response)
 
 		// check Frame
 		switch {
 		case n < 2:
 			return measurements, errors.New("uvs232.readLog: " + InvalidDataLength)
-		case !checkMod256(response[:n]):
-			return measurements, errors.New("uvs232.readLog: " + InvalidChecksum)
-		}
-
-		// Check Content
-		if nrOfFrames*12+1 != n {
+		case nrOfFrames*12+1 != n:
 			return measurements, errors.New("uvs232.readLog: " + InvalidDataLength)
+		case !checkMod256(response):
+			return measurements, errors.New("uvs232.readLog: " + InvalidChecksum)
 		}
 
 		for i := 0; i < nrOfFrames; i++ {
 			idx := i * 12
 			data := getMeasurement(response[idx : idx+9])
 			timestamp := convertTimeStamp(response[idx+9 : idx+12])
-			data.Time = log.Time.Add(time.Duration(log.timeStamp-timestamp) * -10 * time.Second)
+			// signed: a record newer than the header must not wrap into the far past
+			age := int64(log.timeStamp) - int64(timestamp)
+			data.Time = log.Time.Add(time.Duration(age) * -10 * time.Second)
 
 			if data.Time.Before(lastTimestamp) {
-				lt := lastTimestamp.Sub(log.Time).Seconds()/10 + float64(log.timeStamp)
-				debug.ErrorLog.Printf("timestamp %v is older than last %v  %v [% x]", timestamp, lt, data, response[idx:idx+12])
+				slog.Warn("uvs232: record is older than the previous one", "timestamp", timestamp, "time", data.Time, "previous", lastTimestamp)
 			} else {
-				debug.TraceLog.Printf("timestamp %v %v [% x]", timestamp, data, response[idx:idx+12])
 				lastTimestamp = data.Time
 			}
 
@@ -125,17 +120,14 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 
 // closeLogger reads footer of uvs232 data block
 func (log *logger) closeLogger() (err error) {
-	var n int
+	var response []byte
 
-	response := make([]byte, maxBufferSize)
-	send := []byte{cmdClose}
-
-	if n, err = log.req(send, response, "the request to read the end of data has failed"); err != nil {
+	if response, err = log.req([]byte{cmdClose}, atLeast(1), "the request to read the end of data has failed"); err != nil {
 		return
 	}
 
 	// check Frame
-	if n != 1 {
+	if len(response) != 1 {
 		return errors.New("uvs232.closeLog: " + InvalidDataLength)
 	}
 

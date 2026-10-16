@@ -1,13 +1,16 @@
+// Package session talks to a UVS232 data logger (Technische Alternative) over a
+// serial interface.
 package session
 
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/albenik/go-serial"
-	"github.com/womat/debug"
+	"go.bug.st/serial"
 )
 
 const (
@@ -23,9 +26,20 @@ const (
 	UnsupportedDevice = "unsupported device"
 )
 
-// Session is the interface for a serial Port
+// port is the part of serial.Port the session uses; tests replace it.
+type port interface {
+	io.ReadWriteCloser
+	ResetInputBuffer() error
+	ResetOutputBuffer() error
+	SetDTR(dtr bool) error
+	SetRTS(rts bool) error
+	SetReadTimeout(t time.Duration) error
+}
+
+// Session is an open connection to a UVS232.
 type Session struct {
-	serial.Port
+	port port
+	name string
 }
 
 // Measurement is the measured data
@@ -40,19 +54,27 @@ type Measurement struct {
 	RotationSpeed float64
 }
 
-// comPort prevents to open serial device twice
+// comPort allows one open session per process: Open locks it, Close unlocks it.
+// A second Open blocks until the first session is closed.
 var comPort sync.Mutex
 
-// New generates a serial device handler and set DTR ON and RTS off
+// openPort is serial.Open; tests replace it.
+var openPort = func(name string, mode *serial.Mode) (port, error) {
+	return serial.Open(name, mode)
+}
+
+// New returns a closed session.
 func New() (s *Session) {
 	return &Session{}
 }
 
-// Open generates a serial device handler and set DTR ON and RTS off
-func (s *Session) Open(connection string) (err error) {
-	debug.TraceLog.Printf("open %v", connection)
+// Open opens the serial interface, e.g. "/dev/ttyUSB0 9600 n 8 1"
+// (device, baud rate, parity n/o/e/m/s, data bits, stop bits 1/1.5/2),
+// and sets DTR on and RTS off, which powers the UVS232.
+func (s *Session) Open(connection string) error {
+	slog.Debug("uvs232: open", "connection", connection)
 
-	var port, p, st string
+	var name, p, st string
 	var b, d int
 
 	parity := map[string]serial.Parity{
@@ -69,14 +91,17 @@ func (s *Session) Open(connection string) (err error) {
 		"2":   serial.TwoStopBits,
 	}
 
-	if _, err = fmt.Sscanf(connection, "%s %d %s %d %s", &port, &b, &p, &d, &st); err != nil {
-		return
+	if _, err := fmt.Sscanf(connection, "%s %d %s %d %s", &name, &b, &p, &d, &st); err != nil {
+		return fmt.Errorf("uvs232.Open: %s %q: %w", InvalidParameter, connection, err)
 	}
 	if _, ok := parity[p]; !ok {
-		return errors.New("uvs232.Open: " + InvalidParameter)
+		return fmt.Errorf("uvs232.Open: %s: parity %q", InvalidParameter, p)
 	}
 	if _, ok := stop[st]; !ok {
-		return errors.New("uvs232.Open: " + InvalidParameter)
+		return fmt.Errorf("uvs232.Open: %s: stop bits %q", InvalidParameter, st)
+	}
+	if s.port != nil {
+		return errors.New("uvs232.Open: session is already open")
 	}
 
 	mode := &serial.Mode{
@@ -86,48 +111,50 @@ func (s *Session) Open(connection string) (err error) {
 		StopBits: stop[st],
 	}
 
-	// ComPort will be unlocked with the Close() function
-	debug.TraceLog.Print("lock the com port")
 	comPort.Lock()
-	debug.TraceLog.Print("com port is locked")
 
-	func() {
-		if s.Port, err = serial.Open(port, mode); err != nil {
-			return
+	pt, err := openPort(name, mode)
+	if err == nil {
+		err = setup(pt)
+		if err != nil {
+			_ = pt.Close()
 		}
-		if err = s.Port.SetRTS(false); err != nil {
-			return
-		}
-		if err = s.Port.SetDTR(true); err != nil {
-			return
-		}
-	}()
-
+	}
 	if err != nil {
-		// in the event of an error, the comPort must never remain blocked!
 		comPort.Unlock()
-		debug.TraceLog.Print("com port is unlocked")
+		return fmt.Errorf("uvs232.Open %s: %w", name, err)
 	}
 
-	return
+	s.port, s.name = pt, name
+	return nil
 }
 
-// Close closes the serial device
+func setup(p port) error {
+	if err := p.SetRTS(false); err != nil {
+		return err
+	}
+	if err := p.SetDTR(true); err != nil {
+		return err
+	}
+	return p.SetReadTimeout(readPoll)
+}
+
+// Close closes the serial interface. Closing a closed session does nothing.
 func (s *Session) Close() (err error) {
-	if s.Port != nil {
-		debug.TraceLog.Printf("close %v", s.Port.String())
-		_ = s.Port.SetDTR(false)
-		_ = s.Port.SetRTS(false)
-
-		_ = s.Port.ResetInputBuffer()
-		_ = s.Port.ResetOutputBuffer()
-
-		err = s.Port.Close()
-		comPort.Unlock()
-		debug.TraceLog.Print("com port is unlocked")
+	if s.port == nil {
+		return nil
 	}
 
-	return
+	slog.Debug("uvs232: close", "port", s.name)
+	_ = s.port.SetDTR(false)
+	_ = s.port.SetRTS(false)
+	_ = s.port.ResetInputBuffer()
+	_ = s.port.ResetOutputBuffer()
+
+	err = s.port.Close()
+	s.port = nil
+	comPort.Unlock()
+	return err
 }
 
 // Version returns the SW Version of UVS232
@@ -144,17 +171,14 @@ func (s *Session) CurrentData() (m Measurement, err error) {
 func (s *Session) ReadData() (m []Measurement, err error) {
 	var log *logger
 
-	debug.TraceLog.Print("start to read data header")
 	if log, err = s.openLogger(); err != nil {
 		return
 	}
 
-	debug.TraceLog.Print("start to read data block")
 	if m, err = log.readLogger(); err != nil {
 		return
 	}
 
-	debug.TraceLog.Print("start to read data footer")
 	return m, log.closeLogger()
 }
 

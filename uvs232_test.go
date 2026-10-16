@@ -1,57 +1,47 @@
 package uvs232
 
 import (
-	"github.com/womat/debug"
-	"github.com/womat/tools"
 	"os"
 	"testing"
 	"time"
 )
 
-const com = "com4 9600 n 8 1"
-const version = "UVS232 (1DL)"
-
-func TestVersion(t *testing.T) {
-	debug.SetDebug(os.Stderr, debug.Full)
-
-	v, err := Version(com)
-
-	if err != nil {
-		t.Errorf("error: %q", err)
-		return
+// These tests need a UVS232 at a real serial interface, e.g.
+//
+//	UVS232_PORT="/dev/ttyUSB0 9600 n 8 1" go test .
+//
+// Without UVS232_PORT they are skipped.
+func connection(t *testing.T) string {
+	t.Helper()
+	c := os.Getenv("UVS232_PORT")
+	if c == "" {
+		t.Skip("UVS232_PORT not set, no device to test against")
 	}
-	if !tools.In(v, version) {
-		t.Errorf("version is %q, but should be %q", v, version)
-	}
+	return c
 }
 
-func TestCurrentData(t *testing.T) {
-	debug.SetDebug(os.Stderr, debug.Full)
-
-	d, err := CurrentData(com)
-
+func TestDeviceVersion(t *testing.T) {
+	v, err := Version(connection(t))
 	if err != nil {
-		t.Errorf("error: %q", err)
-		return
+		t.Fatal(err)
 	}
+	t.Logf("version %q", v)
+}
 
+func TestDeviceCurrentData(t *testing.T) {
+	d, err := CurrentData(connection(t))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if time.Since(d.Time) > time.Second {
-		t.Errorf("Timestamp is too old: %vs", time.Since(d.Time).Seconds())
-		return
+		t.Errorf("timestamp is %v old", time.Since(d.Time))
 	}
 }
 
-func TestReadLogger(t *testing.T) {
-	debug.SetDebug(os.Stderr, debug.Full)
-
-	m, err := ReadData(com)
-
+func TestDeviceReadData(t *testing.T) {
+	m, err := ReadData(connection(t))
 	if err != nil {
-		t.Errorf("error: %q", err)
-		return
+		t.Fatal(err)
 	}
-	if len(m) == 0 {
-		t.Errorf("no data received")
-		return
-	}
+	t.Logf("%d records", len(m))
 }

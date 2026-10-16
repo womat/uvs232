@@ -2,7 +2,7 @@ package session
 
 import (
 	"errors"
-	"github.com/womat/debug"
+	"log/slog"
 	"time"
 )
 
@@ -45,18 +45,14 @@ const (
 
 // version returns the SW Version of UVS232
 func (s *Session) version() (version string, err error) {
-	var n int
+	var response []byte
 
-	response := make([]byte, maxBufferSize)
-	send := []byte{cmdVersion}
-
-	// function req() gehört ins Verzeichnis commands >> umbenennen auf request
-	if n, err = s.req(send, response, "the version request has failed"); err != nil {
+	if response, err = s.req([]byte{cmdVersion}, atLeast(1), "the version request has failed"); err != nil {
 		return
 	}
 
 	// check Frame
-	if n != 1 {
+	if len(response) != 1 {
 		return "", errors.New("uvs232.Version: " + InvalidDataLength)
 	}
 
@@ -75,14 +71,12 @@ func (s *Session) version() (version string, err error) {
 
 // currentData reads the current measurements
 func (s *Session) currentData() (m Measurement, err error) {
-	var n int
+	var response []byte
 
-	response := make([]byte, maxBufferSize)
-	send := []byte{cmdCurrentData}
-
-	if n, err = s.req(send, response, "the current data request has failed"); err != nil {
+	if response, err = s.req([]byte{cmdCurrentData}, currentDataComplete, "the current data request has failed"); err != nil {
 		return
 	}
+	n := len(response)
 
 	// check Frame
 	switch {
@@ -115,24 +109,33 @@ func (s *Session) currentData() (m Measurement, err error) {
 	}
 
 	m.Time = time.Now()
-	debug.TraceLog.Printf("measurement %v [% x]", m, response[1:10])
+	slog.Debug("uvs232: current data", "measurement", m)
 
 	return
 }
 
-// resetLog deletes logged measurements from EEPROM
+// currentDataComplete: "no data" is one byte, an UVR42 record eleven. For the
+// other controllers only the first byte matters, they are not supported.
+func currentDataComplete(b []byte) bool {
+	switch b[0] {
+	case resUVR42:
+		return len(b) >= 11
+	case resNoData, resUVR31, resUVR64, resHZR65, resEEG30, resTFM66:
+		return true
+	}
+	return false
+}
+
+// clearData deletes logged measurements from EEPROM
 func (s *Session) clearData() (err error) {
-	var n int
+	var response []byte
 
-	response := make([]byte, maxBufferSize)
-	send := []byte{cmdReset}
-
-	if n, err = s.req(send, response, "the reset request has failed"); err != nil {
+	if response, err = s.req([]byte{cmdReset}, atLeast(1), "the reset request has failed"); err != nil {
 		return
 	}
 
 	// check Frame
-	if n != 1 {
+	if len(response) != 1 {
 		return errors.New("uvs232.clearData: " + InvalidDataLength)
 	}
 

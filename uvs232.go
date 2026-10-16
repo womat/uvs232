@@ -1,7 +1,13 @@
+// Package uvs232 reads a Technische Alternative UVS232 data logger: the
+// controller's current values and the measurements stored in its memory.
+//
+// The functions here open the serial interface, run one command and close it
+// again. To run several commands, use a session from pkg/session.
 package uvs232
 
 import (
-	"github.com/womat/debug"
+	"log/slog"
+
 	"github.com/womat/uvs232/pkg/session"
 )
 
@@ -10,7 +16,7 @@ import (
 
 // Version returns the SW Version of UVS232
 func Version(com string) (v string, err error) {
-	debug.TraceLog.Print("start Version()")
+	slog.Debug("uvs232: Version")
 	s := session.New()
 
 	if err = s.Open(com); err != nil {
@@ -24,7 +30,7 @@ func Version(com string) (v string, err error) {
 // CurrentData reads the current measurements
 // e.g. CurrentData("/dev/ttyr00 9600 n 8 1")
 func CurrentData(com string) (m session.Measurement, err error) {
-	debug.TraceLog.Print("start CurrentData()")
+	slog.Debug("uvs232: CurrentData")
 	s := session.New()
 
 	if err = s.Open(com); err != nil {
@@ -37,7 +43,7 @@ func CurrentData(com string) (m session.Measurement, err error) {
 
 // ReadData reads measurements of uvs232 data logger
 func ReadData(com string) (m []session.Measurement, err error) {
-	debug.TraceLog.Print("start ReadLogger()")
+	slog.Debug("uvs232: ReadData")
 	s := session.New()
 
 	if err = s.Open(com); err != nil {
@@ -50,7 +56,7 @@ func ReadData(com string) (m []session.Measurement, err error) {
 
 // ClearData deletes logged measurements from uvs232 data logger
 func ClearData(com string) (err error) {
-	debug.TraceLog.Print("start ClearData)=")
+	slog.Debug("uvs232: ClearData")
 	s := session.New()
 
 	if err = s.Open(com); err != nil {
