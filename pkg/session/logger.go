@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -58,6 +59,13 @@ func (s *Session) openLogger() (log *logger, err error) {
 // readLogger reads a usv232 data block
 func (log *logger) readLogger() (measurements []Measurement, err error) {
 	var lastTimestamp time.Time
+
+	// Before the no-data check: if the memory has wrapped around, the end
+	// address can be small. Returning no records would leave the memory
+	// uncleared without anyone noticing.
+	if log.startAddress > log.endAddress {
+		return nil, fmt.Errorf("uvs232.readLog: start address 0x%04x after end address 0x%04x", log.startAddress, log.endAddress)
+	}
 
 	// no data available
 	if log.startAddress < 0x10 || log.endAddress <= 0x10 {

@@ -212,6 +212,21 @@ func TestReadDataInBlocks(t *testing.T) {
 	}
 }
 
+func TestReadDataStartAfterEnd(t *testing.T) {
+	// Start 0x30, end 0x10: no records would be read, and the caller would not
+	// know the memory is not empty.
+	header := withChecksum(resHeader, resVersion, 0xe8, 0x03, 0x00, 76, 0x30, 0x00, 0x10, 0x00)
+	f := &fakeLogger{chunk: 11, answers: map[string][]byte{
+		string([]byte{cmdHeader}): header,
+		string([]byte{cmdClose}):  {resClose},
+	}}
+	s := openFake(t, f)
+
+	if m, err := s.ReadData(); err == nil || !strings.Contains(err.Error(), "start address") {
+		t.Errorf("ReadData = %d records, %v; want an error", len(m), err)
+	}
+}
+
 func TestTimeoutLeavesNothingBehind(t *testing.T) {
 	// No answer to the version request; the next request must get its own answer.
 	f := &fakeLogger{chunk: 11, answers: map[string][]byte{
