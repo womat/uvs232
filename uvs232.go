@@ -22,7 +22,7 @@ func Version(com string) (v string, err error) {
 	if err = s.Open(com); err != nil {
 		return
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	return s.Version()
 }
@@ -36,7 +36,7 @@ func CurrentData(com string) (m session.Measurement, err error) {
 	if err = s.Open(com); err != nil {
 		return
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	return s.CurrentData()
 }
@@ -49,7 +49,7 @@ func ReadData(com string) (m []session.Measurement, err error) {
 	if err = s.Open(com); err != nil {
 		return
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	return s.ReadData()
 }
@@ -62,7 +62,7 @@ func ClearData(com string) (err error) {
 	if err = s.Open(com); err != nil {
 		return
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	return s.ClearData()
 }
