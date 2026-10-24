@@ -146,6 +146,72 @@ func TestReadData(t *testing.T) {
 	}
 }
 
+func TestReadDataInBlocks(t *testing.T) {
+	// A request reads at most 8 records; the rest follows in further requests.
+	// The second case ends at the top of the address space, where an uint16
+	// address would wrap around to 0 and the loop would not stop.
+	for _, tc := range []struct {
+		name       string
+		start, end uint16
+		blocks     []int // records per request
+	}{
+		{"10 records", 0x0010, 0x00a0, []int{8, 2}},
+		{"end at 0xfff0", 0xff70, 0xfff0, []int{8, 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			header := withChecksum(resHeader, resVersion, 0xe8, 0x03, 0x00, 76,
+				byte(tc.start), byte(tc.start>>8), byte(tc.end), byte(tc.end>>8))
+			answers := map[string][]byte{
+				string([]byte{cmdHeader}): header,
+				string([]byte{cmdClose}):  {resClose},
+			}
+			address, ts := int(tc.start), uint32(900)
+			var want [][]byte
+			for _, n := range tc.blocks {
+				var block []byte
+				for range n {
+					block = append(block, record(int16(ts), 0, 0, 0, 0, ts)...)
+					ts++
+				}
+				req := withChecksum(cmdReadData, byte(address), byte(address>>8), byte(n))
+				answers[string(req)] = withChecksum(block...)
+				want = append(want, req)
+				address += 16 * n
+			}
+
+			f := &fakeLogger{chunk: 13, answers: answers}
+			s := openFake(t, f)
+
+			m, err := s.ReadData()
+			if err != nil {
+				t.Fatal(err)
+			}
+			total := 0
+			for _, n := range tc.blocks {
+				total += n
+			}
+			if len(m) != total {
+				t.Fatalf("%d records, want %d", len(m), total)
+			}
+			for i := range m {
+				if m[i].Temperature1 != float64(900+i)/10 {
+					t.Errorf("record %d: Temperature1 %v, want %v", i, m[i].Temperature1, float64(900+i)/10)
+				}
+			}
+			// header, the block requests, close
+			got := f.requests[1 : len(f.requests)-1]
+			if len(got) != len(want) {
+				t.Fatalf("requests % x, want % x", got, want)
+			}
+			for i := range want {
+				if !bytes.Equal(got[i], want[i]) {
+					t.Errorf("request %d: % x, want % x", i, got[i], want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestTimeoutLeavesNothingBehind(t *testing.T) {
 	// No answer to the version request; the next request must get its own answer.
 	f := &fakeLogger{chunk: 11, answers: map[string][]byte{
