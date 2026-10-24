@@ -12,7 +12,6 @@ type logger struct {
 	*Session
 	timeStamp    uint32
 	Time         time.Time
-	recordLength uint16
 	startAddress uint16
 	endAddress   uint16
 }
@@ -29,29 +28,28 @@ func (s *Session) openLogger() (log *logger, err error) {
 	// check Frame
 	switch {
 	case n != 11:
-		return nil, errors.New("uvs232.openLog: " + InvalidDataLength)
+		return nil, errors.New("uvs232.ReadData: " + InvalidDataLength)
 	case !checkMod256(response[:n]):
-		return nil, errors.New("uvs232.openLog: " + InvalidChecksum)
+		return nil, errors.New("uvs232.ReadData: " + InvalidChecksum)
 	}
 
 	// Check Content
 	switch {
 	case response[0] != resHeader:
-		return nil, errors.New("uvs232.openLog: " + InvalidIdentifier)
-	case response[1] != resVersion:
-		return nil, errors.New("uvs232.openLog: " + InvalidVersion)
+		return nil, errors.New("uvs232.ReadData: " + InvalidIdentifier)
+	case response[1] != resUVS232_1DL:
+		return nil, errors.New("uvs232.ReadData: " + InvalidVersion)
 	}
 
 	log = &logger{
 		Session:      s,
 		timeStamp:    convertTimeStamp(response[2:5]),
 		Time:         time.Now().Truncate(time.Second),
-		recordLength: uint16(response[5]) - 64,
 		startAddress: binary.LittleEndian.Uint16(response[6:8]),
 		endAddress:   binary.LittleEndian.Uint16(response[8:10]),
 	}
 
-	slog.Debug("uvs232: logger header", "time", log.Time, "timestamp", log.timeStamp, "recordLength", log.recordLength,
+	slog.Debug("uvs232: logger header", "time", log.Time, "timestamp", log.timeStamp,
 		"startAddress", log.startAddress, "endAddress", log.endAddress)
 	return log, nil
 }
@@ -64,7 +62,7 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 	// address can be small. Returning no records would leave the memory
 	// uncleared without anyone noticing.
 	if log.startAddress > log.endAddress {
-		return nil, fmt.Errorf("uvs232.readLog: start address 0x%04x after end address 0x%04x", log.startAddress, log.endAddress)
+		return nil, fmt.Errorf("uvs232.ReadData: start address 0x%04x after end address 0x%04x", log.startAddress, log.endAddress)
 	}
 
 	// no data available
@@ -98,11 +96,11 @@ func (log *logger) readLogger() (measurements []Measurement, err error) {
 		// check Frame
 		switch {
 		case n < 2:
-			return measurements, errors.New("uvs232.readLog: " + InvalidDataLength)
+			return measurements, errors.New("uvs232.ReadData: " + InvalidDataLength)
 		case nrOfFrames*12+1 != n:
-			return measurements, errors.New("uvs232.readLog: " + InvalidDataLength)
+			return measurements, errors.New("uvs232.ReadData: " + InvalidDataLength)
 		case !checkMod256(response):
-			return measurements, errors.New("uvs232.readLog: " + InvalidChecksum)
+			return measurements, errors.New("uvs232.ReadData: " + InvalidChecksum)
 		}
 
 		for i := 0; i < nrOfFrames; i++ {
@@ -136,12 +134,12 @@ func (log *logger) closeLogger() (err error) {
 
 	// check Frame
 	if len(response) != 1 {
-		return errors.New("uvs232.closeLog: " + InvalidDataLength)
+		return errors.New("uvs232.ReadData: " + InvalidDataLength)
 	}
 
 	// check Content
 	if response[0] != resClose {
-		return errors.New("uvs232.closeLog: " + UnknownValue)
+		return errors.New("uvs232.ReadData: " + UnknownValue)
 	}
 
 	return

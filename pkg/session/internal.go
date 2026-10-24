@@ -105,10 +105,6 @@ func convertTimeStamp(response []byte) (timeStamp uint32) {
 
 // getMeasurement reads a data record
 func getMeasurement(buffer []byte) (m Measurement) {
-	if len(buffer) != 9 {
-		return
-	}
-
 	m.Temperature1 = float64(int16(binary.LittleEndian.Uint16(buffer[0:2]))) / 10
 	m.Temperature2 = float64(int16(binary.LittleEndian.Uint16(buffer[2:4]))) / 10
 	m.Temperature3 = float64(int16(binary.LittleEndian.Uint16(buffer[4:6]))) / 10

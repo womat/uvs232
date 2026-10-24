@@ -165,7 +165,7 @@ func TestLateBytesBeforeRequest(t *testing.T) {
 
 func TestVersion(t *testing.T) {
 	f := &fakeLogger{chunk: 1, answers: map[string][]byte{
-		string([]byte{cmdVersion}): {resUSV232_1DL},
+		string([]byte{cmdVersion}): {resUVS232_1DL},
 	}}
 	s := openFake(t, f)
 
@@ -176,7 +176,7 @@ func TestVersion(t *testing.T) {
 
 func TestReadData(t *testing.T) {
 	// Header: timestamp 1000, data from 0x10 to 0x30 = 3 records.
-	header := withChecksum(resHeader, resVersion, 0xe8, 0x03, 0x00, 76, 0x10, 0x00, 0x30, 0x00)
+	header := withChecksum(resHeader, resUVS232_1DL, 0xe8, 0x03, 0x00, 76, 0x10, 0x00, 0x30, 0x00)
 	var block []byte
 	block = append(block, record(100, 200, 300, 400, out1, 990)...)
 	block = append(block, record(101, 201, 301, 401, 0, 995)...)
@@ -217,7 +217,7 @@ func TestReadDataInBlocks(t *testing.T) {
 		{"end at 0xfff0", 0xff70, 0xfff0, []int{8, 1}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header := withChecksum(resHeader, resVersion, 0xe8, 0x03, 0x00, 76,
+			header := withChecksum(resHeader, resUVS232_1DL, 0xe8, 0x03, 0x00, 76,
 				byte(tc.start), byte(tc.start>>8), byte(tc.end), byte(tc.end>>8))
 			answers := map[string][]byte{
 				string([]byte{cmdHeader}): header,
@@ -273,7 +273,7 @@ func TestReadDataInBlocks(t *testing.T) {
 func TestReadDataStartAfterEnd(t *testing.T) {
 	// Start 0x30, end 0x10: no records would be read, and the caller would not
 	// know the memory is not empty.
-	header := withChecksum(resHeader, resVersion, 0xe8, 0x03, 0x00, 76, 0x30, 0x00, 0x10, 0x00)
+	header := withChecksum(resHeader, resUVS232_1DL, 0xe8, 0x03, 0x00, 76, 0x30, 0x00, 0x10, 0x00)
 	f := &fakeLogger{chunk: 11, answers: map[string][]byte{
 		string([]byte{cmdHeader}): header,
 		string([]byte{cmdClose}):  {resClose},
@@ -302,7 +302,7 @@ func TestTimeoutLeavesNothingBehind(t *testing.T) {
 
 func TestIncompleteResponse(t *testing.T) {
 	f := &fakeLogger{chunk: 4, answers: map[string][]byte{
-		string([]byte{cmdHeader}): {resHeader, resVersion, 0, 0},
+		string([]byte{cmdHeader}): {resHeader, resUVS232_1DL, 0, 0},
 	}}
 	s := openFake(t, f)
 
@@ -331,6 +331,10 @@ func TestOpenCloseLock(t *testing.T) {
 
 	if err := s.Open("/dev/fake 9600 n 8 1"); err != nil {
 		t.Fatal(err)
+	}
+	// A second Open on the open session fails instead of blocking on the lock.
+	if err := s.Open("/dev/fake 9600 n 8 1"); err == nil || !strings.Contains(err.Error(), "already open") {
+		t.Errorf("second Open: %v", err)
 	}
 	// Closing twice must not unlock twice (that panics).
 	_ = s.Close()

@@ -28,8 +28,8 @@ const (
 
 const (
 	resOldVersion = 0xA6
-	resUSV232_1DL = 0xA7
-	resUSV232_2DL = 0xD0
+	resUVS232_1DL = 0xA7
+	resUVS232_2DL = 0xD0
 	resNoData     = 0xAB
 	resUVR31      = 0x30
 	resUVR42      = 0x10
@@ -38,7 +38,6 @@ const (
 	resEEG30      = 0x50
 	resTFM66      = 0x40
 	resHeader     = 0x0F
-	resVersion    = 0xA7
 	resClose      = 0xAD
 	resReset      = 0xAF
 )
@@ -60,9 +59,9 @@ func (s *Session) version() (version string, err error) {
 	switch response[0] {
 	case resOldVersion:
 		return "old version (update required)", nil
-	case resUSV232_1DL:
+	case resUVS232_1DL:
 		return "UVS232 (1DL)", nil
-	case resUSV232_2DL:
+	case resUVS232_2DL:
 		return "UVS232 (2DL)", nil
 	}
 
@@ -134,12 +133,12 @@ func (s *Session) clearData() (err error) {
 
 	// check Frame
 	if len(response) != 1 {
-		return errors.New("uvs232.clearData: " + InvalidDataLength)
+		return errors.New("uvs232.ClearData: " + InvalidDataLength)
 	}
 
 	// check Content
 	if response[0] != resReset {
-		return errors.New("uvs232.clearData: " + UnknownValue)
+		return errors.New("uvs232.ClearData: " + UnknownValue)
 	}
 
 	return

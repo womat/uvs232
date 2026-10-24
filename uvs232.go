@@ -11,9 +11,6 @@ import (
 	"github.com/womat/uvs232/pkg/session"
 )
 
-// usage of parameter com: device baudrate parity databits stopbits
-// eg:"/dev/ttyr00 9600 n 8 1"
-
 // Version returns the SW Version of UVS232
 func Version(com string) (v string, err error) {
 	slog.Debug("uvs232: Version")

@@ -36,7 +36,8 @@ type port interface {
 	SetReadTimeout(t time.Duration) error
 }
 
-// Session is an open connection to a UVS232.
+// Session is an open connection to a UVS232. It is not safe for concurrent
+// use; a caller that shares it between goroutines must serialise the calls.
 type Session struct {
 	port port
 	name string
@@ -45,13 +46,13 @@ type Session struct {
 // Measurement is the measured data
 type Measurement struct {
 	Time          time.Time
-	Temperature1  float64
+	Temperature1  float64 // °C, sensors 1-4
 	Temperature2  float64
 	Temperature3  float64
 	Temperature4  float64
-	Out1          bool
+	Out1          bool // outputs 1 and 2
 	Out2          bool
-	RotationSpeed float64
+	RotationSpeed float64 // speed step of output 1
 }
 
 // comPort allows one open session per process: Open locks it, Close unlocks it.
