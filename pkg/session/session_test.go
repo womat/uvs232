@@ -13,7 +13,8 @@ import (
 )
 
 // fakeLogger plays a UVS232: for each request it answers with a fixed response,
-// delivered in pieces of chunk bytes, one piece per Read.
+// delivered in pieces of chunk bytes, one piece per Read. Like a real port, an
+// answer is appended to what is still in the input buffer.
 type fakeLogger struct {
 	mu        sync.Mutex
 	answers   map[string][]byte // request -> response
@@ -22,13 +23,14 @@ type fakeLogger struct {
 	requests  [][]byte
 	closed    bool
 	failSetup bool
+	late      []byte // arrives shortly after each ResetInputBuffer
 }
 
 func (f *fakeLogger) Write(b []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, bytes.Clone(b))
-	f.pending = bytes.Clone(f.answers[string(b)])
+	f.pending = append(f.pending, f.answers[string(b)]...)
 	return len(b), nil
 }
 
@@ -46,8 +48,21 @@ func (f *fakeLogger) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (f *fakeLogger) Close() error                       { f.closed = true; return nil }
-func (f *fakeLogger) ResetInputBuffer() error            { f.pending = nil; return nil }
+func (f *fakeLogger) Close() error { f.closed = true; return nil }
+func (f *fakeLogger) ResetInputBuffer() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pending = nil
+	if late := f.late; late != nil {
+		time.AfterFunc(sendDelay/4, func() {
+			f.mu.Lock()
+			f.pending = append(f.pending, late...)
+			f.mu.Unlock()
+		})
+	}
+	return nil
+}
+
 func (f *fakeLogger) ResetOutputBuffer() error           { return nil }
 func (f *fakeLogger) SetDTR(bool) error                  { return nil }
 func (f *fakeLogger) SetReadTimeout(time.Duration) error { return nil }
@@ -102,6 +117,49 @@ func TestCurrentDataInPieces(t *testing.T) {
 	}
 	if m.Temperature1 != 68.3 || m.Temperature3 != -1.2 || !m.Out1 || m.Out2 || m.RotationSpeed != 5 {
 		t.Errorf("measurement %+v", m)
+	}
+}
+
+func TestCurrentDataOtherDevice(t *testing.T) {
+	// The first byte decides; the rest of the answer may be missing, and the
+	// error must come without waiting for the timeout.
+	for _, tc := range []struct {
+		answer []byte
+		want   string
+	}{
+		{[]byte{0x77, 1, 2}, UnknownDevice},
+		{[]byte{resUVR31, 1, 2}, UnsupportedDevice},
+	} {
+		f := &fakeLogger{chunk: 11, answers: map[string][]byte{
+			string([]byte{cmdCurrentData}): tc.answer,
+		}}
+		s := openFake(t, f)
+
+		start := time.Now()
+		_, err := s.CurrentData()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("answer % x: %v, want %q", tc.answer, err, tc.want)
+		}
+		if d := time.Since(start); d > timeOut/2 {
+			t.Errorf("answer % x: took %v", tc.answer, d)
+		}
+		_ = s.Close()
+	}
+}
+
+func TestLateBytesBeforeRequest(t *testing.T) {
+	// Bytes of a late answer arrive shortly after the input buffer is
+	// cleared; they must not end up in front of the response.
+	f := &fakeLogger{chunk: 11, late: []byte{0x99}, answers: map[string][]byte{
+		string([]byte{cmdReset}): {resReset},
+	}}
+	s := openFake(t, f)
+
+	if err := s.ClearData(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.requests) != 1 {
+		t.Errorf("%d requests, want 1 (no retry)", len(f.requests))
 	}
 }
 

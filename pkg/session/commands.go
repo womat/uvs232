@@ -78,15 +78,12 @@ func (s *Session) currentData() (m Measurement, err error) {
 	}
 	n := len(response)
 
-	// check Frame
-	switch {
-	case n == 0:
+	if n == 0 {
 		return m, errors.New("uvs232.CurrentData: " + NoDataReceived)
-	case n > 1 && !checkMod256(response[:n]):
-		return m, errors.New("uvs232.CurrentData: " + InvalidChecksum)
 	}
 
-	// check Content
+	// check Content; the checksum only for the record that is used, the
+	// response of another controller may be cut off after the first byte
 	switch response[0] {
 	case resNoData:
 		if n != 1 {
@@ -103,6 +100,9 @@ func (s *Session) currentData() (m Measurement, err error) {
 		if n != 11 {
 			return m, errors.New("uvs232.CurrentData: " + InvalidDataLength)
 		}
+		if !checkMod256(response) {
+			return m, errors.New("uvs232.CurrentData: " + InvalidChecksum)
+		}
 		m = getMeasurement(response[1:10])
 	default:
 		return m, errors.New("uvs232.CurrentData: " + UnknownDevice)
@@ -114,16 +114,14 @@ func (s *Session) currentData() (m Measurement, err error) {
 	return
 }
 
-// currentDataComplete: "no data" is one byte, an UVR42 record eleven. For the
-// other controllers only the first byte matters, they are not supported.
+// currentDataComplete: an UVR42 record is eleven bytes. For anything else the
+// first byte decides - "no data", an unsupported or an unknown device - so
+// there is no need to wait for the timeout.
 func currentDataComplete(b []byte) bool {
-	switch b[0] {
-	case resUVR42:
+	if b[0] == resUVR42 {
 		return len(b) >= 11
-	case resNoData, resUVR31, resUVR64, resHZR65, resEEG30, resTFM66:
-		return true
 	}
-	return false
+	return true
 }
 
 // clearData deletes logged measurements from EEPROM

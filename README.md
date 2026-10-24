@@ -70,8 +70,9 @@ predecessor is logged as a warning and still returned — filter it if that matt
 Every command waits up to 1 s for a complete answer and is repeated once after 500 ms if
 it fails. An answer is read until it has the length the command expects, so a response
 that arrives in several pieces (at 9600 baud a full data block takes about 100 ms) is put
-back together. Nothing keeps reading after a command has returned: a late answer cannot be
-mistaken for the answer to the next command.
+back together. Nothing keeps reading after a command has returned, and the input buffer is
+cleared right before each command is sent, so a late answer to an earlier command is not
+taken for the answer to the next one.
 
 ## Logging
 

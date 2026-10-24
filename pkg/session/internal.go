@@ -40,6 +40,10 @@ func (s *Session) request(send []byte, complete func([]byte) bool) ([]byte, erro
 	if s.port == nil {
 		return nil, errNotOpen
 	}
+
+	// Wait first, then clear: bytes of a late answer that arrive during the
+	// delay must not be taken for the start of this response.
+	time.Sleep(sendDelay)
 	if err := s.port.ResetInputBuffer(); err != nil {
 		return nil, err
 	}
@@ -47,7 +51,6 @@ func (s *Session) request(send []byte, complete func([]byte) bool) ([]byte, erro
 		return nil, err
 	}
 
-	time.Sleep(sendDelay)
 	start := time.Now()
 	slog.Debug("uvs232: send request", "data", hexBytes(send))
 	if _, err := s.port.Write(send); err != nil {
