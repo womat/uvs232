@@ -79,6 +79,11 @@ taken for the answer to the next one.
 The module logs through `log/slog` with the default logger: the exchanged bytes at debug
 level, retries at warning level. Set the default logger in your program to control it.
 
+This is deliberate: the module uses only `log/slog` and no logging package of its own. Where
+the output goes and at which level is the program's decision, made once in `main` — for
+example with `github.com/womat/golib/v2/xlog` and `slog.SetDefault`, as `womat/uxsol` does.
+A dependency on golib here would have nothing to call, since `xlog.Init` belongs in `main`.
+
 ## Tests
 
 ```bash
@@ -92,6 +97,17 @@ unless `UVS232_PORT` is set:
 ```bash
 UVS232_PORT="/dev/ttyUSB0 9600 n 8 1" go test .
 ```
+
+## Changes in v0.1.1
+
+- `ReadData` returns an error when the start address lies after the end address, instead
+  of no records: the memory would never be cleared, and nobody would notice.
+- The input buffer is cleared after the delay before a command, so bytes of a late answer
+  arriving during the delay are not taken for the next response.
+- `CurrentData` reports an unknown or unsupported controller at once instead of after the
+  timeout, and no longer as an invalid checksum when that controller's answer is cut off.
+- `golang.org/x/sys` v0.49.0 (GO-2026-5024, Windows only).
+- CI runs `golangci-lint` and `govulncheck`.
 
 ## Changes in v0.1.0
 
