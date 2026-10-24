@@ -24,12 +24,17 @@ type fakeLogger struct {
 	closed    bool
 	failSetup bool
 	late      []byte // arrives shortly after each ResetInputBuffer
+	silent    int    // number of requests left unanswered
 }
 
 func (f *fakeLogger) Write(b []byte) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, bytes.Clone(b))
+	if f.silent > 0 {
+		f.silent--
+		return len(b), nil
+	}
 	f.pending = append(f.pending, f.answers[string(b)]...)
 	return len(b), nil
 }
@@ -321,6 +326,9 @@ func TestOpenCloseLock(t *testing.T) {
 	if err := s.Open("/dev/fake 9600 x 8 1"); err == nil || !strings.Contains(err.Error(), "parity") {
 		t.Errorf("invalid parity: %v", err)
 	}
+	if err := s.Open("/dev/fake 9600 n 8 3"); err == nil || !strings.Contains(err.Error(), "stop bits") {
+		t.Errorf("invalid stop bits: %v", err)
+	}
 
 	// A failing setup closes the port and releases the lock.
 	f.failSetup = true
@@ -342,5 +350,134 @@ func TestOpenCloseLock(t *testing.T) {
 
 	if _, err := s.Version(); !errors.Is(err, errNotOpen) {
 		t.Errorf("Version on closed session: %v", err)
+	}
+}
+
+func TestWrongAnswers(t *testing.T) {
+	// Every answer has the length the request waits for, or more, so no case
+	// runs into the timeout. ReadData starts from three good records.
+	header := withChecksum(resHeader, resUVS232_1DL, 0xe8, 0x03, 0x00, 76, 0x10, 0x00, 0x30, 0x00)
+	readBlock := string(withChecksum(cmdReadData, 0x10, 0x00, 3))
+	var block []byte
+	for ts := uint32(990); ts < 993; ts++ {
+		block = append(block, record(100, 200, 300, 400, 0, ts)...)
+	}
+	block = withChecksum(block...)
+	uvr42 := withChecksum(append([]byte{resUVR42}, record(683, 541, -12, 452, 0, 0)[:9]...)...)
+
+	// badSum flips the checksum; withHeader builds a header with field i changed.
+	badSum := func(b []byte) []byte { b = bytes.Clone(b); b[len(b)-1] ^= 0xff; return b }
+	withHeader := func(i int, v byte) []byte {
+		h := bytes.Clone(header[:10])
+		h[i] = v
+		return withChecksum(h...)
+	}
+
+	version := func(s *Session) error { _, err := s.Version(); return err }
+	current := func(s *Session) error { _, err := s.CurrentData(); return err }
+	read := func(s *Session) error { _, err := s.ReadData(); return err }
+	clear := func(s *Session) error { return s.ClearData() }
+
+	for _, tc := range []struct {
+		name   string
+		call   func(*Session) error
+		req    string
+		answer []byte
+		want   string
+	}{
+		{"version length", version, string([]byte{cmdVersion}), []byte{resUVS232_1DL, 0}, InvalidDataLength},
+		{"version value", version, string([]byte{cmdVersion}), []byte{0x55}, UnknownValue},
+		{"current checksum", current, string([]byte{cmdCurrentData}), badSum(uvr42), InvalidChecksum},
+		{"current length", current, string([]byte{cmdCurrentData}), append(bytes.Clone(uvr42), 0), InvalidDataLength},
+		{"current no data", current, string([]byte{cmdCurrentData}), []byte{resNoData}, NoDataAvailable},
+		{"current no data length", current, string([]byte{cmdCurrentData}), []byte{resNoData, 0}, InvalidDataLength},
+		{"clear length", clear, string([]byte{cmdReset}), []byte{resReset, 0}, InvalidDataLength},
+		{"clear value", clear, string([]byte{cmdReset}), []byte{0x55}, UnknownValue},
+		{"header checksum", read, string([]byte{cmdHeader}), badSum(header), InvalidChecksum},
+		{"header length", read, string([]byte{cmdHeader}), append(bytes.Clone(header), 0), InvalidDataLength},
+		{"header identifier", read, string([]byte{cmdHeader}), withHeader(0, 0x0e), InvalidIdentifier},
+		{"header version", read, string([]byte{cmdHeader}), withHeader(1, resUVS232_2DL), InvalidVersion},
+		{"block checksum", read, readBlock, badSum(block), InvalidChecksum},
+		{"block length", read, readBlock, append(bytes.Clone(block), 0), InvalidDataLength},
+		{"close length", read, string([]byte{cmdClose}), []byte{resClose, 0}, InvalidDataLength},
+		{"close value", read, string([]byte{cmdClose}), []byte{0x55}, UnknownValue},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			answers := map[string][]byte{
+				string([]byte{cmdHeader}): header,
+				readBlock:                 block,
+				string([]byte{cmdClose}):  {resClose},
+			}
+			answers[tc.req] = tc.answer
+			f := &fakeLogger{chunk: 64, answers: answers}
+			s := openFake(t, f)
+
+			if err := tc.call(s); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestStaleBytesCleared(t *testing.T) {
+	// Bytes still in the input buffer before a request must not reach the response.
+	f := &fakeLogger{chunk: 11, answers: map[string][]byte{
+		string([]byte{cmdReset}): {resReset},
+	}}
+	s := openFake(t, f)
+	f.pending = []byte{0x99}
+
+	if err := s.ClearData(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadDataRecordNewerThanHeader(t *testing.T) {
+	// The second record is 5 steps newer than the header; its time must lie
+	// 50 s after the first record, not wrap into the past.
+	header := withChecksum(resHeader, resUVS232_1DL, 0xe8, 0x03, 0x00, 76, 0x10, 0x00, 0x20, 0x00)
+	block := append(record(100, 0, 0, 0, 0, 1000), record(101, 0, 0, 0, 0, 1005)...)
+	f := &fakeLogger{chunk: 11, answers: map[string][]byte{
+		string([]byte{cmdHeader}):                        header,
+		string(withChecksum(cmdReadData, 0x10, 0x00, 2)): withChecksum(block...),
+		string([]byte{cmdClose}):                         {resClose},
+	}}
+	s := openFake(t, f)
+
+	m, err := s.ReadData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 2 {
+		t.Fatalf("%d records", len(m))
+	}
+	if d := m[1].Time.Sub(m[0].Time); d != 50*time.Second {
+		t.Errorf("records are %v apart, want 50s", d)
+	}
+}
+
+func TestRetry(t *testing.T) {
+	// The first request gets no answer, the repeated one does.
+	f := &fakeLogger{chunk: 11, silent: 1, answers: map[string][]byte{
+		string([]byte{cmdReset}): {resReset},
+	}}
+	s := openFake(t, f)
+
+	if err := s.ClearData(); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.requests) != 2 {
+		t.Errorf("%d requests, want 2", len(f.requests))
+	}
+}
+
+func TestNoRetryWhenClosed(t *testing.T) {
+	// A closed session is not a failed request: no retry, no waiting.
+	start := time.Now()
+	if err := New().ClearData(); !errors.Is(err, errNotOpen) {
+		t.Errorf("err = %v, want not open", err)
+	}
+	if d := time.Since(start); d >= retryTime {
+		t.Errorf("took %v", d)
 	}
 }
